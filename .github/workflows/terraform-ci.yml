@@ -1,0 +1,32 @@
+name: terraform-ci
+
+on:
+  pull_request:
+    paths: ["infra/**"]
+  push:
+    branches: [main]
+    paths: ["infra/**"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+        working-directory: infra
+
+      - name: Init (no backend, no AWS access needed)
+        run: terraform init -backend=false -input=false
+        working-directory: infra/envs/dev
+
+      - name: Validate
+        run: terraform validate
+        working-directory: infra/envs/dev

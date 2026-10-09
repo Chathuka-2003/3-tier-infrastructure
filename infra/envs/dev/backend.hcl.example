@@ -1,0 +1,5 @@
+bucket       = "REPLACE-with-your-unique-state-bucket"
+key          = "three-tier/dev/terraform.tfstate"
+region       = "eu-north-1"
+encrypt      = true
+use_lockfile = true # native S3 locking (Terraform >= 1.10), no DynamoDB table needed

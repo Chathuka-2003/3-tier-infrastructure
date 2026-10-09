@@ -1,0 +1,106 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "app/**"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: threetier-dev-app
+  ECS_CLUSTER: threetier-dev-cluster
+  ECS_SERVICE: threetier-dev-app
+  TASK_FAMILY: threetier-dev-app
+  CONTAINER_NAME: app
+
+jobs:
+  # Pull requests: prove the image still builds. No AWS access at all.
+  build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (not pushed)
+        run: docker build --platform linux/amd64 -t app:pr ./app
+
+  # Push to main: build, push to ECR, roll out to ECS.
+  deploy:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # lets the job request an OIDC token for AWS
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          TAG="${GITHUB_SHA::12}"
+          IMAGE="${REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+          # ECR tags are immutable, so a re-run of the same commit reuses the image.
+          if aws ecr describe-images --repository-name "${ECR_REPOSITORY}" \
+               --image-ids imageTag="${TAG}" >/dev/null 2>&1; then
+            echo "Image ${TAG} already exists in ECR - skipping build."
+          else
+            docker build --provenance=false --platform linux/amd64 -t "${IMAGE}" ./app
+            docker push "${IMAGE}"
+          fi
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch current task definition
+        run: |
+          aws ecs describe-task-definition --task-definition "${TASK_FAMILY}" \
+            --query taskDefinition > task-definition.json
+
+      - name: Insert the new image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.image }}
+
+      - name: Deploy to ECS (rolling update, auto-rollback on failure)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - name: Smoke test
+        if: ${{ vars.ALB_URL != '' }}
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-delay 10 --retry-all-errors \
+            "${{ vars.ALB_URL }}/actuator/health"
+
+      - name: Summary
+        run: |
+          echo "### Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`${{ steps.image.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
