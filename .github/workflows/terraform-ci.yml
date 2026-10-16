@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      matrix:
+        dir: [infra/envs/dev, infra/envs/prod, infra/account-baseline]
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +28,8 @@ jobs:
 
       - name: Init (no backend, no AWS access needed)
         run: terraform init -backend=false -input=false
-        working-directory: infra/envs/dev
+        working-directory: ${{ matrix.dir }}
 
       - name: Validate
         run: terraform validate
-        working-directory: infra/envs/dev
+        working-directory: ${{ matrix.dir }}

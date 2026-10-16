@@ -1,0 +1,5 @@
+bucket       = "REPLACE-with-your-state-bucket"
+key          = "three-tier/prod/terraform.tfstate" # different key = separate state from dev
+region       = "eu-north-1"
+encrypt      = true
+use_lockfile = true
