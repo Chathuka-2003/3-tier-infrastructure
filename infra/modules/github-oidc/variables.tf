@@ -47,3 +47,9 @@ variable "task_role_arns" {
   description = "ECS execution + task role ARNs the pipeline may pass to ECS when registering a task definition."
   type        = list(string)
 }
+
+variable "github_subject_prefix" {
+  description = "Override for the OIDC subject prefix. Needed when the repo uses immutable subject claims (owner/repo IDs). Null means repo:<github_repo>."
+  type        = string
+  default     = null
+}

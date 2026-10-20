@@ -3,6 +3,7 @@ module "github_oidc" {
 
   name                       = local.name
   github_repo                = var.github_repo
+  github_subject_prefix      = "repo:Chathuka-2003@216152483/3-tier-infrastructure@1412493342"
   create_oidc_provider       = var.create_oidc_provider
   existing_oidc_provider_arn = var.existing_oidc_provider_arn
 
