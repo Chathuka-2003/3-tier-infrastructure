@@ -6,6 +6,7 @@ tfplan
 backend.hcl
 terraform.tfvars
 crash.log
+infra/modules/**/*.zip
 
 # Java / IDE
 target/
